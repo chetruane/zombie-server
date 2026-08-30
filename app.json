@@ -16,7 +16,12 @@
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "package": "com.chetruane.zombietagapp"
+      "package": "com.chetruane.zombietagapp",
+      "config": {
+        "googleMaps": {
+          "apiKey": "YOUR_ACTUAL_GOOGLE_MAPS_API_KEY"
+        }
+      }
     },
     "web": {
       "favicon": "./assets/favicon.png"

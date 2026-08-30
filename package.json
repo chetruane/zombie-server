@@ -18,7 +18,8 @@
     "socket.io-client": "^4.7.5"
   },
   "devDependencies": {
-    "@babel/core": "^7.25.0"
+    "@babel/core": "^7.25.0",
+    "@react-native-community/cli": "latest"
   },
   "private": true
 }
