@@ -4,7 +4,7 @@ import MapView, { Marker, Circle, PROVIDER_DEFAULT } from 'react-native-maps';
 import * as Location from 'expo-location';
 import { io } from 'socket.io-client';
 
-const SERVER_URL = 'https://zombie-tag-server.onrender.com';
+const SERVER_URL = 'https://zombie-server-53i4.onrender.com/';
 
 export default function App() {
   const [fatalError, setFatalError] = useState(null);
