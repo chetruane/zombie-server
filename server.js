@@ -1,4 +1,3 @@
-// server.js
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -8,48 +7,40 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: '*' } });
 
-// In-memory store for active session players
 const activePlayers = {};
 
 io.on('connection', (socket) => {
   console.log(`Player connected: ${socket.id}`);
 
-  // Roll 50/50 role immediately on drop-in
-  const initialRole = Math.random() < 0.5 ? 'ZOMBIE' : 'SURVIVOR';
-  
+  // Roll 50/50 role on connection
   activePlayers[socket.id] = {
     id: socket.id,
-    role: initialRole,
+    role: Math.random() < 0.5 ? 'ZOMBIE' : 'SURVIVOR',
     latitude: null,
     longitude: null,
-    joinedAt: Date.now(),
   };
 
-  // Send player their assigned role
   socket.emit('init_player', activePlayers[socket.id]);
 
-  // Receive GPS updates from mobile clients
   socket.on('update_location', (coords) => {
     if (!activePlayers[socket.id]) return;
     activePlayers[socket.id].latitude = coords.latitude;
     activePlayers[socket.id].longitude = coords.longitude;
   });
 
-  // Handle immediate cleanup on exit/rejoin
   socket.on('disconnect', () => {
-    console.log(`Player left: ${socket.id}`);
+    console.log(`Player disconnected: ${socket.id}`);
     delete activePlayers[socket.id];
     io.emit('game_state', Object.values(activePlayers));
   });
 });
 
-// Continuous game tick (Runs 1x per second)
+// Continuous loop checking 10m tag collisions every 1 second
 setInterval(() => {
   const playersList = Object.values(activePlayers).filter((p) => p.latitude && p.longitude);
   const zombies = playersList.filter((p) => p.role === 'ZOMBIE');
   const survivors = playersList.filter((p) => p.role === 'SURVIVOR');
 
-  // Check 10-meter infection radii
   zombies.forEach((zombie) => {
     survivors.forEach((survivor) => {
       const distance = getDistance(
@@ -57,17 +48,16 @@ setInterval(() => {
         { latitude: survivor.latitude, longitude: survivor.longitude }
       );
 
-      if (distance <= 10) {
-        // Tag survivor -> turns zombie
+      // Trigger infection if within 10 meters
+      if (distance <= 9) {
         activePlayers[survivor.id].role = 'ZOMBIE';
-        io.emit('player_infected', { infectedId: survivor.id, infectedBy: zombie.id });
+        io.emit('player_infected', { infectedId: survivor.id });
       }
     });
   });
 
-  // Broadcast current global map positions to everyone
   io.emit('game_state', Object.values(activePlayers));
 }, 1000);
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`Persistent Global Tag Server running on port ${PORT}`));
+server.listen(PORT, () => console.log(`Server active on port ${PORT}`));
