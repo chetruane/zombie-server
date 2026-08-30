@@ -1,25 +1,49 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, Alert, ActivityIndicator, ScrollView } from 'react-native';
 import MapView, { Marker, Circle, PROVIDER_DEFAULT } from 'react-native-maps';
 import * as Location from 'expo-location';
 import { io } from 'socket.io-client';
 
-// Replace with your live Render URL (or local IP for testing)
-const SERVER_URL = 'https://zombie-server-53i4.onrender.com/';
+const SERVER_URL = 'https://zombie-tag-server.onrender.com';
 
 export default function App() {
+  const [fatalError, setFatalError] = useState(null);
   const [myPlayer, setMyPlayer] = useState(null);
   const [allPlayers, setAllPlayers] = useState([]);
   const [userLocation, setUserLocation] = useState(null);
-  const [statusMessage, setStatusMessage] = useState('Acquiring GPS fix...');
+  const [statusMessage, setStatusMessage] = useState('Initializing...');
   const socketRef = useRef(null);
+
+  // Global runtime crash interceptor
+  useEffect(() => {
+    const originalHandler = ErrorUtils.getGlobalHandler();
+    ErrorUtils.setGlobalHandler((error, isFatal) => {
+      const errorDetails = `Message: ${error?.message || error}\n\nStack:\n${error?.stack || 'No stack trace available'}`;
+      setFatalError(errorDetails);
+    });
+
+    return () => {
+      if (originalHandler) ErrorUtils.setGlobalHandler(originalHandler);
+    };
+  }, []);
 
   const connectSocket = () => {
     if (socketRef.current) socketRef.current.disconnect();
 
+    setStatusMessage('Connecting to game server...');
+    
     socketRef.current = io(SERVER_URL, {
       transports: ['websocket'],
       reconnection: true,
+      timeout: 10000,
+    });
+
+    socketRef.current.on('connect', () => {
+      setStatusMessage('Connected! Acquiring GPS fix...');
+    });
+
+    socketRef.current.on('connect_error', (err) => {
+      setStatusMessage(`Connection failed: ${err.message}`);
     });
 
     socketRef.current.on('init_player', (playerData) => {
@@ -52,10 +76,8 @@ export default function App() {
           return;
         }
 
-        setStatusMessage('Connecting to game server...');
         connectSocket();
 
-        // 1. Try instant cached location first to prevent Android hangs
         let lastLoc = await Location.getLastKnownPositionAsync();
         if (lastLoc) {
           setUserLocation({
@@ -64,10 +86,9 @@ export default function App() {
           });
         }
 
-        // 2. Start live streaming updates
         locationSub = await Location.watchPositionAsync(
           {
-            accuracy: Location.Accuracy.Balanced, // Balanced prevents GPS hardware hanging
+            accuracy: Location.Accuracy.Balanced,
             timeInterval: 1000,
             distanceInterval: 1,
           },
@@ -94,6 +115,24 @@ export default function App() {
       if (socketRef.current) socketRef.current.disconnect();
     };
   }, []);
+
+  // If a runtime crash happens anywhere, display it nicely on screen instead of closing
+  if (fatalError) {
+    return (
+      <View style={styles.errorContainer}>
+        <Text style={styles.errorTitle}>🚨 App Crash Diagnostic Log</Text>
+        <ScrollView style={styles.errorScroll}>
+          <Text style={styles.errorText}>{fatalError}</Text>
+        </ScrollView>
+        <TouchableOpacity 
+          style={styles.retryButton} 
+          onPress={() => setFatalError(null)}
+        >
+          <Text style={styles.retryText}>Dismiss / Try Again</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   if (!userLocation || !myPlayer) {
     return (
@@ -146,7 +185,6 @@ export default function App() {
         })}
       </MapView>
 
-      {/* Persistent Status HUD */}
       <View style={[styles.hud, isZombie ? styles.hudZombie : styles.hudSurvivor]}>
         <Text style={styles.hudTitle}>
           {isZombie ? '🧟 YOU ARE A ZOMBIE' : '🏃 YOU ARE A SURVIVOR'}
@@ -171,6 +209,12 @@ const styles = StyleSheet.create({
   map: { flex: 1 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#111', padding: 20 },
   loadingText: { color: '#fff', marginTop: 12, fontSize: 14, textAlign: 'center' },
+  errorContainer: { flex: 1, backgroundColor: '#1a0000', padding: 24, justifyContent: 'center' },
+  errorTitle: { color: '#ff4444', fontSize: 20, fontWeight: 'bold', marginBottom: 12, textAlign: 'center' },
+  errorScroll: { backgroundColor: '#111', padding: 12, borderRadius: 8, maxHeight: 400, borderWidth: 1, borderColor: '#440000' },
+  errorText: { color: '#ff8888', fontFamily: 'monospace', fontSize: 12 },
+  retryButton: { marginTop: 16, backgroundColor: '#c0392b', padding: 14, borderRadius: 8, alignItems: 'center' },
+  retryText: { color: '#fff', fontWeight: 'bold', fontSize: 14 },
   hud: {
     position: 'absolute',
     top: 50,
