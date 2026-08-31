@@ -73,7 +73,7 @@ setInterval(() => {
       longitude: loc.longitude
     });
   });
-}, 300000);
+}, 900000);
 
 // Main Game Loop (1 second)
 setInterval(() => {
