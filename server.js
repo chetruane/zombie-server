@@ -8,14 +8,25 @@ const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: '*' } });
 
 const activePlayers = {};
+const ipMemory = {}; // Caches roles by IP address for 60 seconds
 
 io.on('connection', (socket) => {
-  console.log(`Player connected: ${socket.id}`);
+  const ip = socket.handshake.address;
+  let assignedRole = Math.random() < 0.5 ? 'ZOMBIE' : 'SURVIVOR';
 
-  // Roll 50/50 role on connection
+  // If this IP accidentally disconnected within the last minute, restore their role
+  if (ipMemory[ip]) {
+    assignedRole = ipMemory[ip].role;
+    clearTimeout(ipMemory[ip].timeout);
+    delete ipMemory[ip];
+  }
+
+  console.log(`Player connected: ${socket.id} (IP: ${ip})`);
+
+  // Assign role to the NEW socket ID so the unmodified app can find itself
   activePlayers[socket.id] = {
     id: socket.id,
-    role: Math.random() < 0.5 ? 'ZOMBIE' : 'SURVIVOR',
+    role: assignedRole,
     latitude: null,
     longitude: null,
   };
@@ -28,8 +39,23 @@ io.on('connection', (socket) => {
     activePlayers[socket.id].longitude = coords.longitude;
   });
 
-  socket.on('disconnect', () => {
-    console.log(`Player disconnected: ${socket.id}`);
+  socket.on('disconnect', (reason) => {
+    console.log(`Player disconnected: ${socket.id} - Reason: ${reason}`);
+    
+    // If it was a network drop, save their state. 
+    // If reason is 'client namespace disconnect' (the Rejoin button), skip saving so they re-roll.
+    if (reason !== 'client namespace disconnect') {
+      const savedRole = activePlayers[socket.id]?.role;
+      if (savedRole) {
+        ipMemory[ip] = {
+          role: savedRole,
+          timeout: setTimeout(() => {
+            delete ipMemory[ip];
+          }, 60000) // 1 minute
+        };
+      }
+    }
+
     delete activePlayers[socket.id];
     io.emit('game_state', Object.values(activePlayers));
   });
@@ -43,7 +69,6 @@ setInterval(() => {
 
   zombies.forEach((zombie) => {
     survivors.forEach((survivor) => {
-      // Verify target is still a survivor in activePlayers before calculating distance
       if (activePlayers[survivor.id]?.role !== 'SURVIVOR') return;
 
       const distance = getDistance(
@@ -51,7 +76,6 @@ setInterval(() => {
         { latitude: survivor.latitude, longitude: survivor.longitude }
       );
 
-      // Trigger infection if within 10 meters
       if (distance <= 9) {
         activePlayers[survivor.id].role = 'ZOMBIE';
         io.emit('player_infected', { infectedId: survivor.id });
