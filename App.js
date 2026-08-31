@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { StyleSheet, View, Text, TouchableOpacity, Alert, ActivityIndicator, ScrollView } from 'react-native';
 import MapView, { Marker, Circle, PROVIDER_DEFAULT } from 'react-native-maps';
 import * as Location from 'expo-location';
+import { Audio } from 'expo-av';
+import { getDistance } from 'geolib';
 import { io } from 'socket.io-client';
 
 const SERVER_URL = 'https://zombie-server-53i4.onrender.com/';
@@ -10,195 +12,182 @@ export default function App() {
   const [fatalError, setFatalError] = useState(null);
   const [myPlayer, setMyPlayer] = useState(null);
   const [allPlayers, setAllPlayers] = useState([]);
+  const [powerups, setPowerups] = useState([]);
+  const [heatmapData, setHeatmapData] = useState([]);
   const [userLocation, setUserLocation] = useState(null);
   const [statusMessage, setStatusMessage] = useState('Initializing...');
+  const [canReroll, setCanReroll] = useState(false);
+  
   const socketRef = useRef(null);
+  const soundsRef = useRef({});
+  const spottedRef = useRef(false);
+  const rerollTimerRef = useRef(null);
 
   // Global runtime crash interceptor
   useEffect(() => {
     const originalHandler = ErrorUtils.getGlobalHandler();
-    ErrorUtils.setGlobalHandler((error, isFatal) => {
-      const errorDetails = `Message: ${error?.message || error}\n\nStack:\n${error?.stack || 'No stack trace available'}`;
-      setFatalError(errorDetails);
+    ErrorUtils.setGlobalHandler((error) => {
+      setFatalError(`Message: ${error?.message || error}\n\nStack:\n${error?.stack || 'No stack trace'}`);
     });
+    return () => { if (originalHandler) ErrorUtils.setGlobalHandler(originalHandler); };
+  }, []);
 
-    return () => {
-      if (originalHandler) ErrorUtils.setGlobalHandler(originalHandler);
-    };
+  // Audio Pre-loading
+  useEffect(() => {
+    async function loadAudio() {
+      const { sound: spotted } = await Audio.Sound.createAsync(require('./assets/spotted.ogg'));
+      const { sound: infected } = await Audio.Sound.createAsync(require('./assets/infected.ogg'));
+      const { sound: yummy } = await Audio.Sound.createAsync(require('./assets/yummy.ogg'));
+      const { sound: powerup } = await Audio.Sound.createAsync(require('./assets/powerup.ogg'));
+      soundsRef.current = { spotted, infected, yummy, powerup };
+    }
+    loadAudio();
+    return () => Object.values(soundsRef.current).forEach(s => s.unloadAsync());
   }, []);
 
   const connectSocket = () => {
     if (socketRef.current) socketRef.current.disconnect();
-
-    setStatusMessage('Connecting to game server...');
+    setCanReroll(false); // Reset reroll button state on manual reconnect
+    setStatusMessage('Connecting...');
     
-    socketRef.current = io(SERVER_URL, {
-      transports: ['websocket'],
-      reconnection: true,
-      timeout: 10000,
-    });
+    socketRef.current = io(SERVER_URL, { transports: ['websocket'], reconnection: true });
 
-    socketRef.current.on('connect', () => {
-      setStatusMessage('Connected! Acquiring GPS fix...');
-    });
+    socketRef.current.on('init_player', setMyPlayer);
 
-    socketRef.current.on('connect_error', (err) => {
-      setStatusMessage(`Connection failed: ${err.message}`);
-    });
-
-    socketRef.current.on('init_player', (playerData) => {
-      setMyPlayer(playerData);
-    });
-
-    socketRef.current.on('game_state', (playersList) => {
-      setAllPlayers(playersList);
+    socketRef.current.on('game_state', (data) => {
+      setAllPlayers(data.players);
+      setPowerups(data.powerups);
       if (socketRef.current) {
-        const self = playersList.find((p) => p.id === socketRef.current.id);
+        const self = data.players.find((p) => p.id === socketRef.current.id);
         if (self) setMyPlayer(self);
       }
     });
 
-    socketRef.current.on('player_infected', ({ infectedId }) => {
-      if (socketRef.current && infectedId === socketRef.current.id) {
-        Alert.alert('INFECTED!', 'A zombie got within 10 meters of you! You are now a Zombie.');
-      }
+    socketRef.current.on('player_infected', () => {
+      soundsRef.current.infected?.replayAsync();
+      Alert.alert('INFECTED!', 'A zombie got within 10 meters of you! You are now a Zombie.');
+    });
+
+    socketRef.current.on('play_sound', (type) => {
+      soundsRef.current[type]?.replayAsync();
     });
   };
 
   useEffect(() => {
-    let locationSub = null;
-
-    async function setupLocationAndSocket() {
-      try {
-        let { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== 'granted') {
-          setStatusMessage('Location permission is required to play.');
-          return;
-        }
-
+    Location.requestForegroundPermissionsAsync().then(({ status }) => {
+      if (status === 'granted') {
         connectSocket();
-
-        let lastLoc = await Location.getLastKnownPositionAsync();
-        if (lastLoc) {
-          setUserLocation({
-            latitude: lastLoc.coords.latitude,
-            longitude: lastLoc.coords.longitude,
-          });
-        }
-
-        locationSub = await Location.watchPositionAsync(
-          {
-            accuracy: Location.Accuracy.Balanced,
-            timeInterval: 1000,
-            distanceInterval: 1,
-          },
-          (position) => {
-            const coords = {
-              latitude: position.coords.latitude,
-              longitude: position.coords.longitude,
-            };
+        Location.watchPositionAsync(
+          { accuracy: Location.Accuracy.Balanced, timeInterval: 1000, distanceInterval: 1 },
+          (pos) => {
+            const coords = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
             setUserLocation(coords);
-            if (socketRef.current && socketRef.current.connected) {
-              socketRef.current.emit('update_location', coords);
-            }
+            if (socketRef.current?.connected) socketRef.current.emit('update_location', coords);
           }
         );
-      } catch (err) {
-        setStatusMessage(`GPS Error: ${err.message}`);
+      } else {
+        setStatusMessage('Location permission is required.');
       }
-    }
-
-    setupLocationAndSocket();
-
-    return () => {
-      if (locationSub) locationSub.remove();
-      if (socketRef.current) socketRef.current.disconnect();
-    };
+    });
   }, []);
 
-  // If a runtime crash happens anywhere, display it nicely on screen instead of closing
+  // Update Heatmap every 180s
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (userLocation) {
+        setHeatmapData(allPlayers.filter(p => getDistance(userLocation, p) > 5000));
+      }
+    }, 180000);
+    return () => clearInterval(interval);
+  }, [allPlayers, userLocation]);
+
+  // Audio Proximity & 30s Reroll Logic
+  useEffect(() => {
+    if (!userLocation || !myPlayer) return;
+    const oppositeRole = myPlayer.role === 'ZOMBIE' ? 'SURVIVOR' : 'ZOMBIE';
+    const enemies = allPlayers.filter(p => p.role === oppositeRole && p.id !== myPlayer.id && p.latitude);
+    
+    // Zombie Proximity Alert for Survivors
+    if (myPlayer.role === 'SURVIVOR') {
+      const nearZombie = enemies.some(e => getDistance(userLocation, e) <= 20);
+      if (nearZombie && !spottedRef.current) soundsRef.current.spotted?.replayAsync();
+      spottedRef.current = nearZombie;
+    }
+
+    // Reroll Availability Timer (Requires no enemies within 5km for 30 continuous seconds)
+    const enemyNearby = enemies.some(e => getDistance(userLocation, e) <= 5000);
+    if (enemyNearby) {
+      clearTimeout(rerollTimerRef.current);
+      rerollTimerRef.current = null;
+      setCanReroll(false);
+    } else if (!rerollTimerRef.current && !canReroll) {
+      rerollTimerRef.current = setTimeout(() => {
+        setCanReroll(true);
+      }, 30000);
+    }
+  }, [allPlayers, userLocation, myPlayer]);
+
   if (fatalError) {
     return (
       <View style={styles.errorContainer}>
-        <Text style={styles.errorTitle}>🚨 App Crash Diagnostic Log</Text>
-        <ScrollView style={styles.errorScroll}>
-          <Text style={styles.errorText}>{fatalError}</Text>
-        </ScrollView>
-        <TouchableOpacity 
-          style={styles.retryButton} 
-          onPress={() => setFatalError(null)}
-        >
-          <Text style={styles.retryText}>Dismiss / Try Again</Text>
+        <Text style={styles.errorTitle}>🚨 App Crash Diagnostic</Text>
+        <ScrollView style={styles.errorScroll}><Text style={styles.errorText}>{fatalError}</Text></ScrollView>
+        <TouchableOpacity style={styles.retryButton} onPress={() => setFatalError(null)}>
+          <Text style={styles.retryText}>Dismiss</Text>
         </TouchableOpacity>
       </View>
     );
   }
 
-  if (!userLocation || !myPlayer) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color="#e74c3c" />
-        <Text style={styles.loadingText}>{statusMessage}</Text>
-      </View>
-    );
-  }
+  if (!userLocation || !myPlayer) return <View style={styles.center}><ActivityIndicator size="large" color="#e74c3c" /><Text style={styles.loadingText}>{statusMessage}</Text></View>;
 
   const isZombie = myPlayer.role === 'ZOMBIE';
+  const hasRadar = myPlayer.radarUntil > Date.now();
+  const hasVaccine = myPlayer.vaccineUntil > Date.now();
 
   return (
     <View style={styles.container}>
-      <MapView
-        style={styles.map}
-        provider={PROVIDER_DEFAULT}
-        initialRegion={{
-          latitude: userLocation.latitude,
-          longitude: userLocation.longitude,
-          latitudeDelta: 0.002,
-          longitudeDelta: 0.002,
-        }}
-        showsUserLocation={true}
-        followsUserLocation={true}
-      >
+      <MapView style={styles.map} provider={PROVIDER_DEFAULT} showsUserLocation={true} followsUserLocation={true} initialRegion={{latitude: userLocation.latitude, longitude: userLocation.longitude, latitudeDelta: 0.01, longitudeDelta: 0.01}}>
+        
+        {powerups.map((pu) => (
+          <Marker key={`pu-${pu.id}`} coordinate={pu}>
+            <Text style={{fontSize: 24}}>{pu.type === 'VACCINE' ? '💉' : '📡'}</Text>
+          </Marker>
+        ))}
+
         {allPlayers.map((p) => {
-          if (!p.latitude || !p.longitude) return null;
-          const isSelf = p.id === myPlayer.id;
-          const playerIsZombie = p.role === 'ZOMBIE';
+          if (!p.latitude || p.id === myPlayer.id) return null;
+          const dist = getDistance(userLocation, p);
+          if (dist > 5000 && !hasRadar) return null;
 
           return (
             <React.Fragment key={p.id}>
-              <Marker
-                coordinate={{ latitude: p.latitude, longitude: p.longitude }}
-                title={isSelf ? `YOU (${p.role})` : p.role}
-                pinColor={playerIsZombie ? 'red' : 'green'}
-              />
-              {playerIsZombie && (
-                <Circle
-                  center={{ latitude: p.latitude, longitude: p.longitude }}
-                  radius={10}
-                  fillColor="rgba(255, 0, 0, 0.25)"
-                  strokeColor="rgba(255, 0, 0, 0.7)"
-                  strokeWidth={2}
-                />
-              )}
+              <Marker coordinate={p} pinColor={p.role === 'ZOMBIE' ? 'red' : 'green'} />
+              {p.role === 'ZOMBIE' && <Circle center={p} radius={10} fillColor="rgba(255,0,0,0.25)" strokeColor="red" />}
             </React.Fragment>
           );
         })}
+
+        {!hasRadar && heatmapData.map((p) => (
+          <Circle key={`heat-${p.id}`} center={p} radius={1500} fillColor={p.role === 'ZOMBIE' ? 'rgba(255,0,0,0.05)' : 'rgba(0,255,0,0.05)'} strokeWidth={0} />
+        ))}
       </MapView>
 
       <View style={[styles.hud, isZombie ? styles.hudZombie : styles.hudSurvivor]}>
-        <Text style={styles.hudTitle}>
-          {isZombie ? '🧟 YOU ARE A ZOMBIE' : '🏃 YOU ARE A SURVIVOR'}
-        </Text>
-        <Text style={styles.hudSubtext}>
-          {isZombie
-            ? 'Touch green survivors or get within 10m to infect them!'
-            : 'Stay more than 10 meters away from red zombie circles!'}
-        </Text>
-        <Text style={styles.playerCount}>Total Players Connected: {allPlayers.length}</Text>
+        <View style={styles.hudTopRow}>
+          <Text style={styles.hudTitle}>{isZombie ? '🧟 ZOMBIE' : '🏃 SURVIVOR'}</Text>
+          <Text style={styles.scoreText}>
+            {isZombie ? `Brains: ${myPlayer.score}` : `Survived: ${myPlayer.score}m`}
+          </Text>
+        </View>
         
-        <TouchableOpacity style={styles.rejoinButton} onPress={connectSocket}>
-          <Text style={styles.rejoinText}>Rejoin Match (Roll 50/50)</Text>
-        </TouchableOpacity>
+        {hasVaccine && <Text style={styles.vaccineText}>💉 IMMUNE: {Math.ceil((myPlayer.vaccineUntil - Date.now())/60000)}m left</Text>}
+        
+        {canReroll && (
+          <TouchableOpacity style={styles.rejoinButton} onPress={connectSocket}>
+            <Text style={styles.rejoinText}>REROLL (Safe Zone)</Text>
+          </TouchableOpacity>
+        )}
       </View>
     </View>
   );
@@ -207,38 +196,21 @@ export default function App() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   map: { flex: 1 },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#111', padding: 20 },
-  loadingText: { color: '#fff', marginTop: 12, fontSize: 14, textAlign: 'center' },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#111' },
+  loadingText: { color: '#fff', marginTop: 12 },
   errorContainer: { flex: 1, backgroundColor: '#1a0000', padding: 24, justifyContent: 'center' },
-  errorTitle: { color: '#ff4444', fontSize: 20, fontWeight: 'bold', marginBottom: 12, textAlign: 'center' },
-  errorScroll: { backgroundColor: '#111', padding: 12, borderRadius: 8, maxHeight: 400, borderWidth: 1, borderColor: '#440000' },
+  errorTitle: { color: '#ff4444', fontSize: 20, fontWeight: 'bold', marginBottom: 12 },
+  errorScroll: { backgroundColor: '#111', padding: 12, borderRadius: 8, maxHeight: 400 },
   errorText: { color: '#ff8888', fontFamily: 'monospace', fontSize: 12 },
   retryButton: { marginTop: 16, backgroundColor: '#c0392b', padding: 14, borderRadius: 8, alignItems: 'center' },
-  retryText: { color: '#fff', fontWeight: 'bold', fontSize: 14 },
-  hud: {
-    position: 'absolute',
-    top: 50,
-    left: 16,
-    right: 16,
-    padding: 16,
-    borderRadius: 14,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOpacity: 0.4,
-    shadowRadius: 6,
-    elevation: 8,
-  },
+  retryText: { color: '#fff', fontWeight: 'bold' },
+  hud: { position: 'absolute', top: 50, left: 16, right: 16, padding: 16, borderRadius: 14, elevation: 8 },
+  hudTopRow: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', alignItems: 'center' },
   hudZombie: { backgroundColor: 'rgba(144, 12, 63, 0.92)' },
   hudSurvivor: { backgroundColor: 'rgba(30, 132, 73, 0.92)' },
   hudTitle: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
-  hudSubtext: { color: '#eee', fontSize: 12, marginTop: 4, textAlign: 'center' },
-  playerCount: { color: '#ddd', fontSize: 11, marginTop: 6, fontStyle: 'italic' },
-  rejoinButton: {
-    marginTop: 10,
-    backgroundColor: 'rgba(255, 255, 255, 0.25)',
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 8,
-  },
-  rejoinText: { color: '#fff', fontSize: 12, fontWeight: 'bold' },
+  scoreText: { color: '#ffd700', fontSize: 16, fontWeight: 'bold' },
+  vaccineText: { color: '#00ffff', fontSize: 14, marginTop: 8, fontWeight: 'bold', textAlign: 'center' },
+  rejoinButton: { marginTop: 12, backgroundColor: 'rgba(255,255,255,0.25)', padding: 10, borderRadius: 8, alignItems: 'center' },
+  rejoinText: { color: '#fff', fontWeight: 'bold', fontSize: 12 },
 });
