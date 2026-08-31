@@ -43,6 +43,9 @@ setInterval(() => {
 
   zombies.forEach((zombie) => {
     survivors.forEach((survivor) => {
+      // Verify target is still a survivor in activePlayers before calculating distance
+      if (activePlayers[survivor.id]?.role !== 'SURVIVOR') return;
+
       const distance = getDistance(
         { latitude: zombie.latitude, longitude: zombie.longitude },
         { latitude: survivor.latitude, longitude: survivor.longitude }
