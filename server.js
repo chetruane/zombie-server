@@ -113,7 +113,7 @@ setInterval(() => {
 
     // Powerup Collisions
     powerups.forEach((pu, index) => {
-      if (getDistance({ latitude: player.latitude, longitude: player.longitude }, pu) <= 20) {
+      if (getDistance({ latitude: player.latitude, longitude: player.longitude }, pu) <= 40) {
         if (pu.type === 'VACCINE') {
           if (player.role === 'ZOMBIE') {
             player.role = 'SURVIVOR';
