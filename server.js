@@ -58,7 +58,7 @@ io.on('connection', (socket) => {
   });
 });
 
-// Spawn Powerups every 5 minutes
+// Spawn Powerups every 15 minutes
 setInterval(() => {
   Object.values(activePlayers).forEach(p => {
     if (!p.latitude) return;
