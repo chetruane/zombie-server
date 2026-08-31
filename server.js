@@ -14,34 +14,32 @@ io.on('connection', (socket) => {
   const ip = socket.handshake.address;
   const now = Date.now();
 
-  // Check if an active player entry already exists for this IP
-  const existingSocketId = Object.keys(activePlayers).find(
-    (id) => activePlayers[id].ip === ip
-  );
+  // 1. Check if the server still thinks your old connection is active (Ghost Socket)
+  const ghostSocketId = Object.keys(activePlayers).find(id => activePlayers[id].ip === ip);
 
   let assignedRole;
-  let infectCooldown = now + 30000; // 30-second cooldown for new/rerolled roles
+  let infectCooldown = now + 30000;
 
-  // DISTINGUISH REROLL VS NETWORK DROP:
-  // If the IP was connected moments ago (< 2s disconnect), treat it as a deliberate Rejoin/Reroll.
-  // If it disconnected > 2s ago, treat it as a network drop recovery.
-  if (existingSocketId || (ipMemory[ip] && now - ipMemory[ip].disconnectTime <= 2000)) {
-    // MANUAL REJOIN / REROLL: Force a fresh 50/50 role roll
-    assignedRole = Math.random() < 0.5 ? 'ZOMBIE' : 'SURVIVOR';
-
-    if (existingSocketId) delete activePlayers[existingSocketId];
+  if (ghostSocketId) {
+    // FAST NETWORK DROP: You reconnected before the server timed out your old socket.
+    // Transfer your exact state over to the new connection.
+    assignedRole = activePlayers[ghostSocketId].role;
+    infectCooldown = activePlayers[ghostSocketId].canInfectAt;
+    delete activePlayers[ghostSocketId]; // Clean up the ghost
+    
     if (ipMemory[ip]) {
       clearTimeout(ipMemory[ip].timeout);
       delete ipMemory[ip];
     }
-  } else if (ipMemory[ip] && now - ipMemory[ip].disconnectTime > 2000) {
-    // NETWORK DROP RECOVERY: Restore saved role and original cooldown
+  } else if (ipMemory[ip]) {
+    // SLOW NETWORK DROP: The server timed you out and saved your state to memory.
     assignedRole = ipMemory[ip].role;
     infectCooldown = ipMemory[ip].canInfectAt;
     clearTimeout(ipMemory[ip].timeout);
     delete ipMemory[ip];
   } else {
-    // BRAND NEW PLAYER
+    // MANUAL REJOIN OR BRAND NEW PLAYER: 
+    // Manual rejoins gracefully close the old socket, skipping the memory checks above.
     assignedRole = Math.random() < 0.5 ? 'ZOMBIE' : 'SURVIVOR';
   }
 
@@ -64,25 +62,26 @@ io.on('connection', (socket) => {
     activePlayers[socket.id].longitude = coords.longitude;
   });
 
-  socket.on('disconnect', () => {
-    const player = activePlayers[socket.id];
-    if (player) {
-      // Save state with timestamp in case it's an accidental signal loss
-      ipMemory[ip] = {
-        role: player.role,
-        canInfectAt: player.canInfectAt,
-        disconnectTime: Date.now(),
-        timeout: setTimeout(() => {
-          delete ipMemory[ip];
-        }, 60000), // 1 minute memory
-      };
-      delete activePlayers[socket.id];
+  socket.on('disconnect', (reason) => {
+    // ONLY save state to memory if it was an accidental network drop.
+    // If the reason is 'client namespace disconnect' (the Rejoin button), skip saving.
+    if (reason !== 'client namespace disconnect') {
+      const player = activePlayers[socket.id];
+      if (player) {
+        ipMemory[ip] = {
+          role: player.role,
+          canInfectAt: player.canInfectAt,
+          timeout: setTimeout(() => {
+            delete ipMemory[ip];
+          }, 60000), // 1 minute memory
+        };
+      }
     }
+    delete activePlayers[socket.id];
     io.emit('game_state', Object.values(activePlayers));
   });
 });
 
-// Continuous loop checking 10m tag collisions every 1 second
 setInterval(() => {
   const playersList = Object.values(activePlayers).filter((p) => p.latitude && p.longitude);
   const zombies = playersList.filter((p) => p.role === 'ZOMBIE');
@@ -91,7 +90,6 @@ setInterval(() => {
   const now = Date.now();
 
   zombies.forEach((zombie) => {
-    // Prevent newly joined/rerolled zombies from infecting anyone for 30 seconds
     if (now < zombie.canInfectAt) return;
 
     survivors.forEach((survivor) => {
