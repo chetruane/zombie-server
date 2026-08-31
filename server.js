@@ -38,7 +38,7 @@ io.on('connection', (socket) => {
     pData.survivorStartTime = now;
   }
 
-  activePlayers[socket.id] = { id: socket.id, ip, latitude: null, longitude: null, ...pData };
+  activePlayers[socket.id] = { ...pData, ip, latitude: null, longitude: null, id: socket.id };
   socket.emit('init_player', activePlayers[socket.id]);
 
   socket.on('update_location', (coords) => {
