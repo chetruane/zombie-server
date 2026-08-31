@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { StyleSheet, View, Text, TouchableOpacity, Alert, ActivityIndicator, ScrollView } from 'react-native';
 import MapView, { Marker, Circle, PROVIDER_DEFAULT } from 'react-native-maps';
 import * as Location from 'expo-location';
-import { Audio } from 'expo-av';
+import { createAudioPlayer } from 'expo-audio';
 import { getDistance } from 'geolib';
 import { io } from 'socket.io-client';
 
@@ -32,22 +32,36 @@ export default function App() {
     return () => { if (originalHandler) ErrorUtils.setGlobalHandler(originalHandler); };
   }, []);
 
-  // Audio Pre-loading
+  // Audio Initialization using modern expo-audio
   useEffect(() => {
-    async function loadAudio() {
-      try {
-        const { sound: spotted } = await Audio.Sound.createAsync(require('./assets/spotted.ogg'));
-        const { sound: infected } = await Audio.Sound.createAsync(require('./assets/infected.ogg'));
-        const { sound: yummy } = await Audio.Sound.createAsync(require('./assets/yummy.ogg'));
-        const { sound: powerup } = await Audio.Sound.createAsync(require('./assets/powerup.ogg'));
-        soundsRef.current = { spotted, infected, yummy, powerup };
-      } catch (err) {
-        console.log("Audio load error:", err);
-      }
+    try {
+      soundsRef.current = {
+        spotted: createAudioPlayer(require('./assets/spotted.ogg')),
+        infected: createAudioPlayer(require('./assets/infected.ogg')),
+        yummy: createAudioPlayer(require('./assets/yummy.ogg')),
+        powerup: createAudioPlayer(require('./assets/powerup.ogg')),
+      };
+    } catch (err) {
+      console.log("Audio load error:", err);
     }
-    loadAudio();
-    return () => Object.values(soundsRef.current).forEach(s => s?.unloadAsync());
+    return () => {
+      Object.values(soundsRef.current).forEach(player => {
+        try { player?.release(); } catch (e) {}
+      });
+    };
   }, []);
+
+  const playSoundKey = (key) => {
+    try {
+      const player = soundsRef.current[key];
+      if (player) {
+        player.seekTo(0);
+        player.play();
+      }
+    } catch (e) {
+      console.log("Play sound error:", e);
+    }
+  };
 
   const connectSocket = () => {
     if (socketRef.current) socketRef.current.disconnect();
@@ -62,18 +76,18 @@ export default function App() {
       setAllPlayers(data.players || []);
       setPowerups(data.powerups || []);
       if (socketRef.current) {
-        const self = data.players.find((p) => p.id === socketRef.current.id);
+        const self = (data.players || []).find((p) => p.id === socketRef.current.id);
         if (self) setMyPlayer(self);
       }
     });
 
     socketRef.current.on('player_infected', () => {
-      soundsRef.current.infected?.replayAsync();
+      playSoundKey('infected');
       Alert.alert('INFECTED!', 'A zombie got within 10 meters of you! You are now a Zombie.');
     });
 
     socketRef.current.on('play_sound', (type) => {
-      soundsRef.current[type]?.replayAsync();
+      playSoundKey(type);
     });
   };
 
@@ -114,7 +128,7 @@ export default function App() {
     // Zombie Proximity Alert for Survivors
     if (myPlayer.role === 'SURVIVOR') {
       const nearZombie = enemies.some(e => getDistance(userLocation, e) <= 20);
-      if (nearZombie && !spottedRef.current) soundsRef.current.spotted?.replayAsync();
+      if (nearZombie && !spottedRef.current) playSoundKey('spotted');
       spottedRef.current = nearZombie;
     }
 
