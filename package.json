@@ -13,10 +13,12 @@
     "expo-audio": "~57.0.4",
     "expo-location": "~57.0.14",
     "expo-status-bar": "~57.0.1",
+    "express": "^5.2.1",
     "geolib": "^3.3.14",
     "react": "19.2.3",
     "react-native": "0.86.3",
     "react-native-maps": "1.27.2",
+    "socket.io": "^4.8.3",
     "socket.io-client": "^4.7.5"
   },
   "devDependencies": {
