@@ -35,19 +35,23 @@ export default function App() {
   // Audio Pre-loading
   useEffect(() => {
     async function loadAudio() {
-      const { sound: spotted } = await Audio.Sound.createAsync(require('./assets/spotted.ogg'));
-      const { sound: infected } = await Audio.Sound.createAsync(require('./assets/infected.ogg'));
-      const { sound: yummy } = await Audio.Sound.createAsync(require('./assets/yummy.ogg'));
-      const { sound: powerup } = await Audio.Sound.createAsync(require('./assets/powerup.ogg'));
-      soundsRef.current = { spotted, infected, yummy, powerup };
+      try {
+        const { sound: spotted } = await Audio.Sound.createAsync(require('./assets/spotted.ogg'));
+        const { sound: infected } = await Audio.Sound.createAsync(require('./assets/infected.ogg'));
+        const { sound: yummy } = await Audio.Sound.createAsync(require('./assets/yummy.ogg'));
+        const { sound: powerup } = await Audio.Sound.createAsync(require('./assets/powerup.ogg'));
+        soundsRef.current = { spotted, infected, yummy, powerup };
+      } catch (err) {
+        console.log("Audio load error:", err);
+      }
     }
     loadAudio();
-    return () => Object.values(soundsRef.current).forEach(s => s.unloadAsync());
+    return () => Object.values(soundsRef.current).forEach(s => s?.unloadAsync());
   }, []);
 
   const connectSocket = () => {
     if (socketRef.current) socketRef.current.disconnect();
-    setCanReroll(false); // Reset reroll button state on manual reconnect
+    setCanReroll(false);
     setStatusMessage('Connecting...');
     
     socketRef.current = io(SERVER_URL, { transports: ['websocket'], reconnection: true });
@@ -55,8 +59,8 @@ export default function App() {
     socketRef.current.on('init_player', setMyPlayer);
 
     socketRef.current.on('game_state', (data) => {
-      setAllPlayers(data.players);
-      setPowerups(data.powerups);
+      setAllPlayers(data.players || []);
+      setPowerups(data.powerups || []);
       if (socketRef.current) {
         const self = data.players.find((p) => p.id === socketRef.current.id);
         if (self) setMyPlayer(self);
@@ -130,7 +134,7 @@ export default function App() {
   if (fatalError) {
     return (
       <View style={styles.errorContainer}>
-        <Text style={styles.errorTitle}>🚨 App Crash Diagnostic</Text>
+        <Text style={styles.errorTitle}>App Crash Diagnostic</Text>
         <ScrollView style={styles.errorScroll}><Text style={styles.errorText}>{fatalError}</Text></ScrollView>
         <TouchableOpacity style={styles.retryButton} onPress={() => setFatalError(null)}>
           <Text style={styles.retryText}>Dismiss</Text>

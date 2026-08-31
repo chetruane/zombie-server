@@ -17,6 +17,10 @@
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "package": "com.chetruane.zombietagapp",
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION"
+      ],
       "config": {
         "googleMaps": {
           "apiKey": "AIzaSyC_Mv2sg8qCnKi1MEb_txpeqzG4kKwZoc8"
@@ -32,7 +36,13 @@
       }
     },
     "plugins": [
-      "expo-status-bar"
+      "expo-status-bar",
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Allow $(PRODUCT_NAME) to use your location to track players."
+        }
+      ]
     ]
   }
 }
