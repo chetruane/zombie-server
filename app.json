@@ -42,7 +42,8 @@
         {
           "locationAlwaysAndWhenInUsePermission": "Allow $(PRODUCT_NAME) to use your location to track players."
         }
-      ]
+      ],
+      "expo-audio"
     ]
   }
 }
