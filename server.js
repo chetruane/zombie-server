@@ -45,18 +45,15 @@ io.on('connection', (socket) => {
     const player = activePlayers[socket.id];
     if (!player) return;
 
-    // Detect if this is the first location fix for this player's session
     const isFirstSpawn = !player.latitude;
 
     player.latitude = coords.latitude;
     player.longitude = coords.longitude;
 
     if (isFirstSpawn) {
-      // Check if any existing powerup is within 2km (2000 meters)
       const nearbyPowerup = powerups.some(pu => getDistance(coords, pu) <= 2000);
 
       if (!nearbyPowerup) {
-        // Spawn 2 powerups nearby (50m to 1500m radius)
         for (let i = 0; i < 2; i++) {
           const distance = Math.floor(Math.random() * 1450) + 50;
           const bearing = Math.floor(Math.random() * 360);
@@ -64,7 +61,7 @@ io.on('connection', (socket) => {
 
           powerups.push({
             id: powerupIdCounter++,
-            type: Math.random() < 0.5 ? 'VACCINE' : 'RADAR',
+            type: Math.random() < 0.4 ? 'VACCINE' : 'RADAR',
             latitude: loc.latitude,
             longitude: loc.longitude
           });
@@ -94,7 +91,7 @@ setInterval(() => {
     
     powerups.push({
       id: powerupIdCounter++,
-      type: Math.random() < 0.5 ? 'VACCINE' : 'RADAR',
+      type: Math.random() < 0.4 ? 'VACCINE' : 'RADAR',
       latitude: loc.latitude,
       longitude: loc.longitude
     });
