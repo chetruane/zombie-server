@@ -18,7 +18,7 @@ io.on('connection', (socket) => {
   const ghostSocketId = Object.keys(activePlayers).find(id => activePlayers[id].ip === ip);
 
   let pData = {
-    role: Math.random() < 0.5 ? 'ZOMBIE' : 'SURVIVOR',
+    role: Math.random() < 0.7 ? 'ZOMBIE' : 'SURVIVOR',
     canInfectAt: now + 30000,
     score: 0,
     survivorStartTime: now,
@@ -54,8 +54,8 @@ io.on('connection', (socket) => {
       const nearbyPowerup = powerups.some(pu => getDistance(coords, pu) <= 2000);
 
       if (!nearbyPowerup) {
-        for (let i = 0; i < 2; i++) {
-          const distance = Math.floor(Math.random() * 1450) + 50;
+        for (let i = 0; i < 6; i++) {
+          const distance = Math.floor(Math.random() * 1950) + 50;
           const bearing = Math.floor(Math.random() * 360);
           const loc = computeDestinationPoint(coords, distance, bearing);
 
@@ -74,14 +74,14 @@ io.on('connection', (socket) => {
     if (reason !== 'client namespace disconnect' && activePlayers[socket.id]) {
       ipMemory[ip] = {
         ...activePlayers[socket.id],
-        timeout: setTimeout(() => delete ipMemory[ip], 60000),
+        timeout: setTimeout(() => delete ipMemory[ip], 180000),
       };
     }
     delete activePlayers[socket.id];
   });
 });
 
-// Spawn Powerups every 7 minutes
+// Spawn Powerups every 6 minutes
 setInterval(() => {
   Object.values(activePlayers).forEach(p => {
     if (!p.latitude) return;
@@ -96,7 +96,7 @@ setInterval(() => {
       longitude: loc.longitude
     });
   });
-}, 400000);
+}, 350000);
 
 // Main Game Loop (1 second)
 setInterval(() => {
@@ -135,7 +135,7 @@ setInterval(() => {
     survivors.forEach((survivor) => {
       if (now < survivor.vaccineUntil || activePlayers[survivor.id]?.role !== 'SURVIVOR') return;
 
-      if (getDistance({ latitude: zombie.latitude, longitude: zombie.longitude }, survivor) <= 10) {
+      if (getDistance({ latitude: zombie.latitude, longitude: zombie.longitude }, survivor) <= 20) {
         activePlayers[survivor.id].role = 'ZOMBIE';
         activePlayers[zombie.id].score += 1;
         
