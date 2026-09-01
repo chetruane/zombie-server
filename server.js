@@ -1,7 +1,7 @@
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
-const { getDistance, computeDestinationPoint } = require('geolib');
+const { getDistance, computeDestinationPoint, getRhumbLineBearing } = require('geolib');
 
 const app = express();
 const server = http.createServer(app);
@@ -11,6 +11,15 @@ const activePlayers = {};
 const ipMemory = {}; 
 let powerups = [];
 let powerupIdCounter = 0;
+let npcZombies = [];
+let npcZombieIdCounter = 0;
+
+function getRandomPowerupType() {
+  const r = Math.random();
+  if (r < 0.4) return 'RADAR';       // 40%
+  if (r < 0.7) return 'VACCINE';     // 30%
+  return 'MITOSIS';                  // 30%
+}
 
 io.on('connection', (socket) => {
   const ip = socket.handshake.address;
@@ -61,7 +70,7 @@ io.on('connection', (socket) => {
 
           powerups.push({
             id: powerupIdCounter++,
-            type: Math.random() < 0.4 ? 'VACCINE' : 'RADAR',
+            type: getRandomPowerupType(),
             latitude: loc.latitude,
             longitude: loc.longitude
           });
@@ -105,7 +114,7 @@ setInterval(() => {
     
     powerups.push({
       id: powerupIdCounter++,
-      type: Math.random() < 0.4 ? 'VACCINE' : 'RADAR',
+      type: getRandomPowerupType(),
       latitude: loc.latitude,
       longitude: loc.longitude
     });
@@ -134,6 +143,12 @@ setInterval(() => {
           player.vaccineUntil = now + 600000;
         } else if (pu.type === 'RADAR') {
           player.radarUntil = now + 600000;
+        } else if (pu.type === 'MITOSIS') {
+          npcZombies.push({
+            id: npcZombieIdCounter++,
+            latitude: player.latitude,
+            longitude: player.longitude
+          });
         }
         io.to(player.id).emit('play_sound', 'powerup');
         powerups.splice(index, 1);
@@ -156,7 +171,41 @@ setInterval(() => {
     });
   });
 
-  io.emit('game_state', { players: Object.values(activePlayers), powerups });
+  // Update NPC Zombies movement and infection logic (3m/s towards nearest living survivor)
+  npcZombies.forEach((npc, npcIndex) => {
+    if (survivors.length === 0) return;
+
+    let nearestSurvivor = survivors[0];
+    let minDistance = getDistance(npc, nearestSurvivor);
+
+    for (let i = 1; i < survivors.length; i++) {
+      const dist = getDistance(npc, survivors[i]);
+      if (dist < minDistance) {
+        minDistance = dist;
+        nearestSurvivor = survivors[i];
+      }
+    }
+
+    if (minDistance <= 20) {
+      if (now >= nearestSurvivor.vaccineUntil && activePlayers[nearestSurvivor.id]?.role === 'SURVIVOR') {
+        activePlayers[nearestSurvivor.id].role = 'ZOMBIE';
+        io.to(nearestSurvivor.id).emit('player_infected', { infectedId: nearestSurvivor.id });
+        npcZombies.splice(npcIndex, 1);
+        return;
+      }
+    }
+
+    try {
+      const bearing = getRhumbLineBearing(npc, nearestSurvivor);
+      const nextPos = computeDestinationPoint(npc, 3, bearing);
+      npc.latitude = nextPos.latitude;
+      npc.longitude = nextPos.longitude;
+    } catch (e) {
+      // Ignore if points are identical
+    }
+  });
+
+  io.emit('game_state', { players: Object.values(activePlayers), powerups, npcZombies });
 }, 1000);
 
 const PORT = process.env.PORT || 3000;
