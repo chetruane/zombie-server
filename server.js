@@ -22,7 +22,6 @@ function getRandomPowerupType() {
 }
 
 io.on('connection', (socket) => {
-  // Extract real client IP behind Render's reverse proxy
   const rawIp = socket.handshake.headers['x-forwarded-for'] || socket.handshake.address;
   const ip = typeof rawIp === 'string' ? rawIp.split(',')[0].trim() : rawIp;
   
@@ -66,8 +65,8 @@ io.on('connection', (socket) => {
       const nearbyPowerup = powerups.some(pu => getDistance(coords, pu) <= 2000);
 
       if (!nearbyPowerup) {
-        for (let i = 0; i < 12; i++) {
-          const distance = Math.floor(Math.random() * 2450) + 50;
+        for (let i = 0; i < 6; i++) {
+          const distance = Math.floor(Math.random() * 1950) + 50;
           const bearing = Math.floor(Math.random() * 360);
           const loc = computeDestinationPoint(coords, distance, bearing);
 
@@ -90,9 +89,11 @@ io.on('connection', (socket) => {
     if (player.role === 'ZOMBIE') {
       player.role = 'SURVIVOR';
       player.survivorStartTime = Date.now();
+      player.score = 0;
     } else {
       player.role = 'ZOMBIE';
       player.canInfectAt = Date.now();
+      player.score = 0;
     }
   });
 
@@ -107,7 +108,7 @@ io.on('connection', (socket) => {
   });
 });
 
-// Spawn Powerups every 5 minutes
+// Spawn Powerups every 6 minutes
 setInterval(() => {
   Object.values(activePlayers).forEach(p => {
     if (!p.latitude) return;
@@ -122,7 +123,7 @@ setInterval(() => {
       longitude: loc.longitude
     });
   });
-}, 300000);
+}, 350000);
 
 // Main Game Loop (1 second)
 setInterval(() => {
@@ -142,6 +143,7 @@ setInterval(() => {
           if (player.role === 'ZOMBIE') {
             player.role = 'SURVIVOR';
             player.survivorStartTime = now;
+            player.score = 0;
           }
           player.vaccineUntil = now + 600000;
         } else if (pu.type === 'RADAR') {
@@ -150,7 +152,8 @@ setInterval(() => {
           npcZombies.push({
             id: npcZombieIdCounter++,
             latitude: player.latitude,
-            longitude: player.longitude
+            longitude: player.longitude,
+            canInfectAt: now + 2000 // 2-second grace period
           });
         }
         io.to(player.id).emit('play_sound', 'powerup');
@@ -166,6 +169,7 @@ setInterval(() => {
 
       if (getDistance({ latitude: zombie.latitude, longitude: zombie.longitude }, survivor) <= 20) {
         activePlayers[survivor.id].role = 'ZOMBIE';
+        activePlayers[survivor.id].score = 0;
         activePlayers[zombie.id].score += 1;
         
         io.to(survivor.id).emit('player_infected', { infectedId: survivor.id });
@@ -174,8 +178,8 @@ setInterval(() => {
     });
   });
 
-  // Update NPC Zombies movement and infection logic (3m/s towards nearest living survivor)
-  npcZombies.forEach((npc, npcIndex) => {
+  // Update NPC Zombies movement and infection logic (Persists after infecting)
+  npcZombies.forEach((npc) => {
     if (survivors.length === 0) return;
 
     let nearestSurvivor = survivors[0];
@@ -189,12 +193,11 @@ setInterval(() => {
       }
     }
 
-    if (minDistance <= 20) {
+    if (now >= npc.canInfectAt && minDistance <= 20) {
       if (now >= nearestSurvivor.vaccineUntil && activePlayers[nearestSurvivor.id]?.role === 'SURVIVOR') {
         activePlayers[nearestSurvivor.id].role = 'ZOMBIE';
+        activePlayers[nearestSurvivor.id].score = 0;
         io.to(nearestSurvivor.id).emit('player_infected', { infectedId: nearestSurvivor.id });
-        npcZombies.splice(npcIndex, 1);
-        return;
       }
     }
 
