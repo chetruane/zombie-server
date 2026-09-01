@@ -81,11 +81,10 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Dev feature: swap role instantly
+  // Dev Menu Actions
   socket.on('dev_swap_role', () => {
     const player = activePlayers[socket.id];
     if (!player) return;
-    
     if (player.role === 'ZOMBIE') {
       player.role = 'SURVIVOR';
       player.survivorStartTime = Date.now();
@@ -95,6 +94,48 @@ io.on('connection', (socket) => {
       player.canInfectAt = Date.now();
       player.score = 0;
     }
+  });
+
+  socket.on('dev_activate_vaccine', () => {
+    const player = activePlayers[socket.id];
+    if (!player) return;
+    if (player.role === 'ZOMBIE') {
+      player.role = 'SURVIVOR';
+      player.survivorStartTime = Date.now();
+      player.score = 0;
+    }
+    player.vaccineUntil = Date.now() + 600000;
+  });
+
+  socket.on('dev_activate_radar', () => {
+    const player = activePlayers[socket.id];
+    if (!player) return;
+    player.radarUntil = Date.now() + 600000;
+  });
+
+  socket.on('dev_activate_mitosis', () => {
+    const player = activePlayers[socket.id];
+    if (!player || !player.latitude) return;
+    npcZombies.push({
+      id: npcZombieIdCounter++,
+      latitude: player.latitude,
+      longitude: player.longitude,
+      canInfectAt: Date.now() + 2000
+    });
+  });
+
+  socket.on('dev_spawn_zombie', () => {
+    const player = activePlayers[socket.id];
+    if (!player || !player.latitude) return;
+    const distance = 50;
+    const bearing = Math.floor(Math.random() * 360);
+    const loc = computeDestinationPoint({ latitude: player.latitude, longitude: player.longitude }, distance, bearing);
+    npcZombies.push({
+      id: npcZombieIdCounter++,
+      latitude: loc.latitude,
+      longitude: loc.longitude,
+      canInfectAt: Date.now() + 2000
+    });
   });
 
   socket.on('disconnect', (reason) => {
@@ -153,7 +194,7 @@ setInterval(() => {
             id: npcZombieIdCounter++,
             latitude: player.latitude,
             longitude: player.longitude,
-            canInfectAt: now + 2000 // 2-second grace period
+            canInfectAt: now + 2000
           });
         }
         io.to(player.id).emit('play_sound', 'powerup');
@@ -178,7 +219,6 @@ setInterval(() => {
     });
   });
 
-  // Update NPC Zombies movement and infection logic (Persists after infecting)
   npcZombies.forEach((npc) => {
     if (survivors.length === 0) return;
 
@@ -206,9 +246,7 @@ setInterval(() => {
       const nextPos = computeDestinationPoint(npc, 3, bearing);
       npc.latitude = nextPos.latitude;
       npc.longitude = nextPos.longitude;
-    } catch (e) {
-      // Ignore if points are identical
-    }
+    } catch (e) {}
   });
 
   io.emit('game_state', { players: Object.values(activePlayers), powerups, npcZombies });
