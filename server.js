@@ -70,6 +70,20 @@ io.on('connection', (socket) => {
     }
   });
 
+  // Dev feature: swap role instantly
+  socket.on('dev_swap_role', () => {
+    const player = activePlayers[socket.id];
+    if (!player) return;
+    
+    if (player.role === 'ZOMBIE') {
+      player.role = 'SURVIVOR';
+      player.survivorStartTime = Date.now();
+    } else {
+      player.role = 'ZOMBIE';
+      player.canInfectAt = Date.now();
+    }
+  });
+
   socket.on('disconnect', (reason) => {
     if (reason !== 'client namespace disconnect' && activePlayers[socket.id]) {
       ipMemory[ip] = {
@@ -106,12 +120,10 @@ setInterval(() => {
   const now = Date.now();
 
   playersList.forEach(player => {
-    // Score update
     if (player.role === 'SURVIVOR') {
       player.score = Math.floor((now - player.survivorStartTime) / 60000);
     }
 
-    // Powerup Collisions
     powerups.forEach((pu, index) => {
       if (getDistance({ latitude: player.latitude, longitude: player.longitude }, pu) <= 40) {
         if (pu.type === 'VACCINE') {
@@ -119,7 +131,7 @@ setInterval(() => {
             player.role = 'SURVIVOR';
             player.survivorStartTime = now;
           }
-            player.vaccineUntil = now + 600000;
+          player.vaccineUntil = now + 600000;
         } else if (pu.type === 'RADAR') {
           player.radarUntil = now + 600000;
         }
@@ -129,7 +141,6 @@ setInterval(() => {
     });
   });
 
-  // Infection Logic
   zombies.forEach((zombie) => {
     if (now < zombie.canInfectAt) return;
     survivors.forEach((survivor) => {
