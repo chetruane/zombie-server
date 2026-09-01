@@ -22,7 +22,10 @@ function getRandomPowerupType() {
 }
 
 io.on('connection', (socket) => {
-  const ip = socket.handshake.address;
+  // Extract real client IP behind Render's reverse proxy
+  const rawIp = socket.handshake.headers['x-forwarded-for'] || socket.handshake.address;
+  const ip = typeof rawIp === 'string' ? rawIp.split(',')[0].trim() : rawIp;
+  
   const now = Date.now();
   const ghostSocketId = Object.keys(activePlayers).find(id => activePlayers[id].ip === ip);
 
