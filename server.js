@@ -119,7 +119,7 @@ setInterval(() => {
             player.role = 'SURVIVOR';
             player.survivorStartTime = now;
           }
-          player.vaccineUntil = now + 600000;
+            player.vaccineUntil = now + 600000;
         } else if (pu.type === 'RADAR') {
           player.radarUntil = now + 600000;
         }
