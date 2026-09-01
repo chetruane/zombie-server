@@ -63,8 +63,8 @@ io.on('connection', (socket) => {
       const nearbyPowerup = powerups.some(pu => getDistance(coords, pu) <= 2000);
 
       if (!nearbyPowerup) {
-        for (let i = 0; i < 6; i++) {
-          const distance = Math.floor(Math.random() * 1950) + 50;
+        for (let i = 0; i < 12; i++) {
+          const distance = Math.floor(Math.random() * 2450) + 50;
           const bearing = Math.floor(Math.random() * 360);
           const loc = computeDestinationPoint(coords, distance, bearing);
 
@@ -104,7 +104,7 @@ io.on('connection', (socket) => {
   });
 });
 
-// Spawn Powerups every 6 minutes
+// Spawn Powerups every 5 minutes
 setInterval(() => {
   Object.values(activePlayers).forEach(p => {
     if (!p.latitude) return;
@@ -119,7 +119,7 @@ setInterval(() => {
       longitude: loc.longitude
     });
   });
-}, 350000);
+}, 300000);
 
 // Main Game Loop (1 second)
 setInterval(() => {
