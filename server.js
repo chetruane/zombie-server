@@ -39,7 +39,9 @@ io.on('connection', (socket) => {
     injuredUntil: 0
   };
 
-  if (ghostSocketId = Object.keys(activePlayers).find(id => activePlayers[id].ip === ip)) {
+  const ghostSocketId = Object.keys(activePlayers).find(id => activePlayers[id].ip === ip);
+
+  if (ghostSocketId) {
     pData = { ...activePlayers[ghostSocketId] };
     delete activePlayers[ghostSocketId];
     if (ipMemory[ip]) { clearTimeout(ipMemory[ip].timeout); delete ipMemory[ip]; }
@@ -132,21 +134,18 @@ io.on('connection', (socket) => {
 
     const endPos = computeDestinationPoint(playerLoc, 420, bearing);
 
-    // Broadcast gunshot sound to all players within 1000m
     Object.values(activePlayers).forEach(p => {
       if (p.latitude && getDistance(playerLoc, p) <= 1000) {
         io.to(p.id).emit('play_sound', 'rifle');
       }
     });
 
-    // Send shot line data for 1s client visualization
     io.emit('rifle_shot', {
       id: Date.now() + Math.random(),
       start: playerLoc,
       end: endPos
     });
 
-    // Helper for line segment hit detection (420m length, within 15m radius along ray)
     const checkHit = (targetLoc) => {
       const dist = getDistance(playerLoc, targetLoc);
       if (dist > 420) return false;
@@ -157,7 +156,6 @@ io.on('connection', (socket) => {
       return perpDist <= 15;
     };
 
-    // Check hit on NPC Zombies
     let hitNpcIndex = -1;
     let minNpcDist = Infinity;
     npcZombies.forEach((npc, index) => {
@@ -176,7 +174,6 @@ io.on('connection', (socket) => {
       return;
     }
 
-    // Check hit on Players
     let hitPlayer = null;
     let minPlayerDist = Infinity;
     Object.values(activePlayers).forEach(p => {
@@ -261,6 +258,19 @@ io.on('connection', (socket) => {
     });
   });
 
+  socket.on('dev_give_rifle', () => {
+    const player = activePlayers[socket.id];
+    if (!player) return;
+    player.rifleAmmo = 20;
+  });
+
+  socket.on('dev_clear_zombies', () => {
+    const player = activePlayers[socket.id];
+    if (!player || !player.latitude) return;
+    const playerLoc = { latitude: player.latitude, longitude: player.longitude };
+    npcZombies = npcZombies.filter(npc => getDistance(playerLoc, npc) > 1000);
+  });
+
   socket.on('disconnect', (reason) => {
     if (reason !== 'client namespace disconnect' && activePlayers[socket.id]) {
       ipMemory[ip] = {
@@ -299,7 +309,6 @@ setInterval(() => {
       player.score = Math.floor((now - player.survivorStartTime) / 60000);
     }
 
-    // Reset hit timer if 30s elapsed without 3rd hit
     if (player.hitCount > 0 && player.hitCount < 3 && now - player.lastHitTime > 30000) {
       player.hitCount = 0;
     }
@@ -345,7 +354,6 @@ setInterval(() => {
       if (now < survivor.vaccineUntil || activePlayers[survivor.id]?.role !== 'SURVIVOR') return;
 
       if (getDistance({ latitude: zombie.latitude, longitude: zombie.longitude }, survivor) <= 20) {
-        // Drop rifle back on the map if carrying one when infected
         if (survivor.rifleAmmo > 0) {
           powerups.push({
             id: powerupIdCounter++,
@@ -408,10 +416,9 @@ setInterval(() => {
     }
   });
 
-  // Prepare game state filtering injured players from visible map data
   const filteredPlayers = Object.values(activePlayers).map(p => {
     if (p.injuredUntil > now) {
-      return { ...p, latitude: null, longitude: null }; // Hide dot from map
+      return { ...p, latitude: null, longitude: null };
     }
     return p;
   });
