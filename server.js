@@ -83,8 +83,8 @@ io.on('connection', (socket) => {
                                npcZombies.some(nz => getDistance(coords, nz) <= 6000);
 
           if (!hasNearbyZombie) {
-            for (let i = 0; i < 38; i++) {
-              const distance = Math.floor(Math.random() * 3121) + 90; 
+            for (let i = 0; i < 42; i++) {
+              const distance = Math.floor(Math.random() * 2311) + 90; 
               const bearing = Math.floor(Math.random() * 360);
               const loc = computeDestinationPoint(coords, distance, bearing);
               npcZombies.push({
@@ -386,7 +386,7 @@ setInterval(() => {
     survivors.forEach((survivor) => {
       if (now < survivor.vaccineUntil || activePlayers[survivor.id]?.role !== 'SURVIVOR') return;
 
-      if (getDistance({ latitude: zombie.latitude, longitude: zombie.longitude }, survivor) <= 20) {
+      if (getDistance({ latitude: zombie.latitude, longitude: zombie.longitude }, survivor) <= 12) {
         if (survivor.rifleAmmo > 0) {
           powerups.push({
             id: powerupIdCounter++,
@@ -425,7 +425,7 @@ setInterval(() => {
       }
     }
 
-    if (now >= npc.canInfectAt && minDistance <= 20) {
+    if (now >= npc.canInfectAt && minDistance <= 8) {
       if (now >= nearestSurvivor.vaccineUntil && activePlayers[nearestSurvivor.id]?.role === 'SURVIVOR') {
         if (nearestSurvivor.rifleAmmo > 0) {
           powerups.push({
@@ -443,10 +443,10 @@ setInterval(() => {
       }
     }
 
-    if (minDistance <= 640) {
+    if (minDistance <= 400) {
       try {
         const bearing = getRhumbLineBearing(npc, nearestSurvivor);
-        const nextPos = computeDestinationPoint(npc, 2.5, bearing);
+        const nextPos = computeDestinationPoint(npc, 2.4, bearing);
         npc.latitude = nextPos.latitude;
         npc.longitude = nextPos.longitude;
       } catch (e) {}
