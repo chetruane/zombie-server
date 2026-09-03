@@ -68,10 +68,10 @@ io.on('connection', (socket) => {
           player.role = 'SURVIVOR';
           player.survivorStartTime = Date.now();
 
-          const nearbyZombie = Object.values(activePlayers).some(p => p.id !== socket.id && p.role === 'ZOMBIE' && p.latitude && getDistance(coords, p) <= 6000) ||
+          const hasNearbyZombie = Object.values(activePlayers).some(p => p.id !== socket.id && p.role === 'ZOMBIE' && p.latitude && getDistance(coords, p) <= 6000) ||
                                npcZombies.some(nz => getDistance(coords, nz) <= 6000);
 
-          if (nearbyZombie) {
+          if (!hasNearbyZombie) {
             for (let i = 0; i < 12; i++) {
               const distance = Math.floor(Math.random() * 451) + 50; 
               const bearing = Math.floor(Math.random() * 360);
