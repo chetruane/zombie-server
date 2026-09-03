@@ -8,7 +8,7 @@ const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: '*' } });
 
 const activePlayers = {};
-const ipMemory = {}; 
+const clientMemory = {}; 
 let powerups = [];
 let powerupIdCounter = 0;
 let npcZombies = [];
@@ -23,8 +23,12 @@ function getRandomPowerupType() {
 }
 
 io.on('connection', (socket) => {
-  const rawIp = socket.handshake.headers['x-forwarded-for'] || socket.handshake.address;
-  const ip = typeof rawIp === 'string' ? rawIp.split(',')[0].trim() : rawIp;
+  const clientId = socket.handshake.query.clientId;
+
+  if (!clientId) {
+    socket.disconnect();
+    return;
+  }
 
   let pData = {
     role: 'PENDING',
@@ -36,22 +40,26 @@ io.on('connection', (socket) => {
     rifleAmmo: 0,
     hitCount: 0,
     lastHitTime: 0,
-    injuredUntil: 0
+    injuredUntil: 0,
+    clientId: clientId
   };
 
-  const ghostSocketId = Object.keys(activePlayers).find(id => activePlayers[id].ip === ip);
+  const ghostSocketId = Object.keys(activePlayers).find(id => activePlayers[id].clientId === clientId);
 
   if (ghostSocketId) {
     pData = { ...activePlayers[ghostSocketId] };
     delete activePlayers[ghostSocketId];
-    if (ipMemory[ip]) { clearTimeout(ipMemory[ip].timeout); delete ipMemory[ip]; }
-  } else if (ipMemory[ip]) {
-    pData = { ...ipMemory[ip] };
-    clearTimeout(ipMemory[ip].timeout);
-    delete ipMemory[ip];
+    if (clientMemory[clientId]) { 
+      clearTimeout(clientMemory[clientId].timeout); 
+      delete clientMemory[clientId]; 
+    }
+  } else if (clientMemory[clientId]) {
+    pData = { ...clientMemory[clientId] };
+    clearTimeout(clientMemory[clientId].timeout);
+    delete clientMemory[clientId];
   }
 
-  activePlayers[socket.id] = { ...pData, ip, latitude: null, longitude: null, id: socket.id };
+  activePlayers[socket.id] = { ...pData, latitude: null, longitude: null, id: socket.id };
   socket.emit('init_player', activePlayers[socket.id]);
 
   socket.on('update_location', (coords) => {
@@ -296,9 +304,9 @@ io.on('connection', (socket) => {
 
   socket.on('disconnect', (reason) => {
     if (reason !== 'client namespace disconnect' && activePlayers[socket.id]) {
-      ipMemory[ip] = {
+      clientMemory[clientId] = {
         ...activePlayers[socket.id],
-        timeout: setTimeout(() => delete ipMemory[ip], 180000),
+        timeout: setTimeout(() => delete clientMemory[clientId], 180000),
       };
     }
     delete activePlayers[socket.id];
