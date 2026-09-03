@@ -272,12 +272,15 @@ setInterval(() => {
       }
     }
 
-    try {
-      const bearing = getRhumbLineBearing(npc, nearestSurvivor);
-      const nextPos = computeDestinationPoint(npc, 3, bearing);
-      npc.latitude = nextPos.latitude;
-      npc.longitude = nextPos.longitude;
-    } catch (e) {}
+    // Detection Radius Check: Only move towards the survivor if they are within 6000 meters
+    if (minDistance <= 6000) {
+      try {
+        const bearing = getRhumbLineBearing(npc, nearestSurvivor);
+        const nextPos = computeDestinationPoint(npc, 3, bearing);
+        npc.latitude = nextPos.latitude;
+        npc.longitude = nextPos.longitude;
+      } catch (e) {}
+    }
   });
 
   io.emit('game_state', { players: Object.values(activePlayers), powerups, npcZombies });
