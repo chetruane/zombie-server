@@ -29,10 +29,10 @@ io.on('connection', (socket) => {
   const ghostSocketId = Object.keys(activePlayers).find(id => activePlayers[id].ip === ip);
 
   let pData = {
-    role: Math.random() < 0.7 ? 'ZOMBIE' : 'SURVIVOR',
-    canInfectAt: now + 30000,
+    role: 'PENDING',
+    canInfectAt: 0,
     score: 0,
-    survivorStartTime: now,
+    survivorStartTime: 0,
     vaccineUntil: 0,
     radarUntil: 0
   };
@@ -45,8 +45,6 @@ io.on('connection', (socket) => {
     pData = { ...ipMemory[ip] };
     clearTimeout(ipMemory[ip].timeout);
     delete ipMemory[ip];
-  } else {
-    pData.survivorStartTime = now;
   }
 
   activePlayers[socket.id] = { ...pData, ip, latitude: null, longitude: null, id: socket.id };
@@ -62,6 +60,42 @@ io.on('connection', (socket) => {
     player.longitude = coords.longitude;
 
     if (isFirstSpawn) {
+      if (player.role === 'PENDING') {
+        const activeSurvivors = Object.values(activePlayers).filter(p => p.id !== socket.id && p.role === 'SURVIVOR' && p.latitude);
+        const hasNearbySurvivor = activeSurvivors.some(sur => getDistance(coords, sur) <= 10000);
+
+        if (!hasNearbySurvivor) {
+          player.role = 'SURVIVOR';
+          player.survivorStartTime = Date.now();
+
+          const nearbyZombie = Object.values(activePlayers).some(p => p.id !== socket.id && p.role === 'ZOMBIE' && p.latitude && getDistance(coords, p) <= 6000) ||
+                               npcZombies.some(nz => getDistance(coords, nz) <= 6000);
+
+          if (nearbyZombie) {
+            for (let i = 0; i < 12; i++) {
+              const distance = Math.floor(Math.random() * 451) + 50; 
+              const bearing = Math.floor(Math.random() * 360);
+              const loc = computeDestinationPoint(coords, distance, bearing);
+              npcZombies.push({
+                id: npcZombieIdCounter++,
+                latitude: loc.latitude,
+                longitude: loc.longitude,
+                canInfectAt: Date.now() + 2000
+              });
+            }
+          }
+        } else {
+          player.role = Math.random() < 0.8 ? 'ZOMBIE' : 'SURVIVOR';
+          if (player.role === 'ZOMBIE') {
+            player.canInfectAt = Date.now() + 30000;
+          } else {
+            player.survivorStartTime = Date.now();
+          }
+        }
+        
+        socket.emit('init_player', player);
+      }
+
       const nearbyPowerup = powerups.some(pu => getDistance(coords, pu) <= 2000);
 
       if (!nearbyPowerup) {
@@ -81,7 +115,6 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Dev Menu Actions
   socket.on('dev_swap_role', () => {
     const player = activePlayers[socket.id];
     if (!player) return;
@@ -149,7 +182,6 @@ io.on('connection', (socket) => {
   });
 });
 
-// Spawn Powerups every 6 minutes
 setInterval(() => {
   Object.values(activePlayers).forEach(p => {
     if (!p.latitude) return;
@@ -166,9 +198,8 @@ setInterval(() => {
   });
 }, 350000);
 
-// Main Game Loop (1 second)
 setInterval(() => {
-  const playersList = Object.values(activePlayers).filter((p) => p.latitude && p.longitude);
+  const playersList = Object.values(activePlayers).filter((p) => p.latitude && p.longitude && p.role !== 'PENDING');
   const zombies = playersList.filter((p) => p.role === 'ZOMBIE');
   const survivors = playersList.filter((p) => p.role === 'SURVIVOR');
   const now = Date.now();
