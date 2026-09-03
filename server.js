@@ -443,7 +443,7 @@ setInterval(() => {
       }
     }
 
-    if (minDistance <= 400) {
+    if (minDistance <= 164) {
       try {
         const bearing = getRhumbLineBearing(npc, nearestSurvivor);
         const nextPos = computeDestinationPoint(npc, 2.4, bearing);
