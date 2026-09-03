@@ -113,7 +113,7 @@ io.on('connection', (socket) => {
 
       if (!nearbyPowerup) {
         for (let i = 0; i < 12; i++) {
-          const distance = Math.floor(Math.random() * 2150) + 50;
+          const distance = Math.floor(Math.random() * 1860) + 40;
           const bearing = Math.floor(Math.random() * 360);
           const loc = computeDestinationPoint(coords, distance, bearing);
 
@@ -316,7 +316,7 @@ io.on('connection', (socket) => {
 setInterval(() => {
   Object.values(activePlayers).forEach(p => {
     if (!p.latitude) return;
-    const distance = Math.floor(Math.random() * 2970) + 30; 
+    const distance = Math.floor(Math.random() * 1970) + 30; 
     const bearing = Math.floor(Math.random() * 360);
     const loc = computeDestinationPoint({ latitude: p.latitude, longitude: p.longitude }, distance, bearing);
     
