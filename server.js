@@ -73,7 +73,7 @@ io.on('connection', (socket) => {
 
           if (!hasNearbyZombie) {
             for (let i = 0; i < 12; i++) {
-              const distance = Math.floor(Math.random() * 451) + 50; 
+              const distance = Math.floor(Math.random() * 1421) + 80; 
               const bearing = Math.floor(Math.random() * 360);
               const loc = computeDestinationPoint(coords, distance, bearing);
               npcZombies.push({
@@ -272,8 +272,8 @@ setInterval(() => {
       }
     }
 
-    // Detection Radius Check: Only move towards the survivor if they are within 6000 meters
-    if (minDistance <= 6000) {
+    // Detection Radius Check: Only move towards the survivor if they are within 600 meters
+    if (minDistance <= 600) {
       try {
         const bearing = getRhumbLineBearing(npc, nearestSurvivor);
         const nextPos = computeDestinationPoint(npc, 3, bearing);
