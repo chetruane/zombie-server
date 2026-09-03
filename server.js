@@ -112,8 +112,8 @@ io.on('connection', (socket) => {
       const nearbyPowerup = powerups.some(pu => getDistance(coords, pu) <= 2000);
 
       if (!nearbyPowerup) {
-        for (let i = 0; i < 12; i++) {
-          const distance = Math.floor(Math.random() * 1860) + 40;
+        for (let i = 0; i < 14; i++) {
+          const distance = Math.floor(Math.random() * 1760) + 40;
           const bearing = Math.floor(Math.random() * 360);
           const loc = computeDestinationPoint(coords, distance, bearing);
 
