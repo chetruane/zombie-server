@@ -75,15 +75,17 @@ io.on('connection', (socket) => {
                                npcZombies.some(nz => getDistance(coords, nz) <= 6000);
 
           if (!hasNearbyZombie) {
-            for (let i = 0; i < 32; i++) {
-              const distance = Math.floor(Math.random() * 3081) + 120; 
+            for (let i = 0; i < 38; i++) {
+              const distance = Math.floor(Math.random() * 3121) + 80; 
               const bearing = Math.floor(Math.random() * 360);
               const loc = computeDestinationPoint(coords, distance, bearing);
               npcZombies.push({
                 id: npcZombieIdCounter++,
                 latitude: loc.latitude,
                 longitude: loc.longitude,
-                canInfectAt: Date.now() + 2000
+                canInfectAt: Date.now() + 2000,
+                hitCount: 0,
+                lastHitTime: 0
               });
             }
           }
@@ -169,8 +171,25 @@ io.on('connection', (socket) => {
     });
 
     if (hitNpcIndex !== -1) {
-      npcZombies.splice(hitNpcIndex, 1);
-      io.to(player.id).emit('play_sound', 'powerup');
+      const npc = npcZombies[hitNpcIndex];
+      const now = Date.now();
+
+      if (typeof npc.hitCount === 'undefined') {
+        npc.hitCount = 0;
+        npc.lastHitTime = 0;
+      }
+
+      if (now - npc.lastHitTime > 30000) {
+        npc.hitCount = 0;
+      }
+
+      npc.hitCount += 1;
+      npc.lastHitTime = now;
+
+      if (npc.hitCount >= 3) {
+        npcZombies.splice(hitNpcIndex, 1);
+        io.to(player.id).emit('play_sound', 'powerup');
+      }
       return;
     }
 
@@ -240,7 +259,9 @@ io.on('connection', (socket) => {
       id: npcZombieIdCounter++,
       latitude: player.latitude,
       longitude: player.longitude,
-      canInfectAt: Date.now() + 2000
+      canInfectAt: Date.now() + 2000,
+      hitCount: 0,
+      lastHitTime: 0
     });
   });
 
@@ -254,14 +275,16 @@ io.on('connection', (socket) => {
       id: npcZombieIdCounter++,
       latitude: loc.latitude,
       longitude: loc.longitude,
-      canInfectAt: Date.now() + 2000
+      canInfectAt: Date.now() + 2000,
+      hitCount: 0,
+      lastHitTime: 0
     });
   });
 
   socket.on('dev_give_rifle', () => {
     const player = activePlayers[socket.id];
     if (!player) return;
-    player.rifleAmmo = 20;
+    player.rifleAmmo = 12;
   });
 
   socket.on('dev_clear_zombies', () => {
@@ -333,13 +356,15 @@ setInterval(() => {
             id: npcZombieIdCounter++,
             latitude: player.latitude,
             longitude: player.longitude,
-            canInfectAt: now + 2000
+            canInfectAt: now + 2000,
+            hitCount: 0,
+            lastHitTime: 0
           });
           io.to(player.id).emit('play_sound', 'powerup');
           powerups.splice(index, 1);
         } else if (pu.type === 'RIFLE') {
           if (player.role === 'SURVIVOR') {
-            player.rifleAmmo = 20;
+            player.rifleAmmo = 12;
             io.to(player.id).emit('play_sound', 'powerup');
             powerups.splice(index, 1);
           }
@@ -375,6 +400,10 @@ setInterval(() => {
   });
 
   npcZombies.forEach((npc) => {
+    if (npc.hitCount > 0 && npc.hitCount < 3 && now - npc.lastHitTime > 30000) {
+      npc.hitCount = 0;
+    }
+
     if (survivors.length === 0) return;
 
     let nearestSurvivor = survivors[0];
@@ -406,7 +435,7 @@ setInterval(() => {
       }
     }
 
-    if (minDistance <= 600) {
+    if (minDistance <= 750) {
       try {
         const bearing = getRhumbLineBearing(npc, nearestSurvivor);
         const nextPos = computeDestinationPoint(npc, 2.5, bearing);
