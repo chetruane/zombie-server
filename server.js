@@ -76,7 +76,7 @@ io.on('connection', (socket) => {
 
           if (!hasNearbyZombie) {
             for (let i = 0; i < 38; i++) {
-              const distance = Math.floor(Math.random() * 3121) + 80; 
+              const distance = Math.floor(Math.random() * 3121) + 90; 
               const bearing = Math.floor(Math.random() * 360);
               const loc = computeDestinationPoint(coords, distance, bearing);
               npcZombies.push({
@@ -104,8 +104,8 @@ io.on('connection', (socket) => {
       const nearbyPowerup = powerups.some(pu => getDistance(coords, pu) <= 2000);
 
       if (!nearbyPowerup) {
-        for (let i = 0; i < 9; i++) {
-          const distance = Math.floor(Math.random() * 1950) + 50;
+        for (let i = 0; i < 12; i++) {
+          const distance = Math.floor(Math.random() * 2150) + 50;
           const bearing = Math.floor(Math.random() * 360);
           const loc = computeDestinationPoint(coords, distance, bearing);
 
@@ -284,7 +284,7 @@ io.on('connection', (socket) => {
   socket.on('dev_give_rifle', () => {
     const player = activePlayers[socket.id];
     if (!player) return;
-    player.rifleAmmo = 25;
+    player.rifleAmmo = 20;
   });
 
   socket.on('dev_clear_zombies', () => {
