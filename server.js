@@ -72,8 +72,8 @@ io.on('connection', (socket) => {
                                npcZombies.some(nz => getDistance(coords, nz) <= 6000);
 
           if (!hasNearbyZombie) {
-            for (let i = 0; i < 12; i++) {
-              const distance = Math.floor(Math.random() * 1421) + 80; 
+            for (let i = 0; i < 16; i++) {
+              const distance = Math.floor(Math.random() * 2451) + 150; 
               const bearing = Math.floor(Math.random() * 360);
               const loc = computeDestinationPoint(coords, distance, bearing);
               npcZombies.push({
