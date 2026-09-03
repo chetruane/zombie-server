@@ -284,7 +284,7 @@ io.on('connection', (socket) => {
   socket.on('dev_give_rifle', () => {
     const player = activePlayers[socket.id];
     if (!player) return;
-    player.rifleAmmo = 12;
+    player.rifleAmmo = 25;
   });
 
   socket.on('dev_clear_zombies', () => {
@@ -435,7 +435,7 @@ setInterval(() => {
       }
     }
 
-    if (minDistance <= 750) {
+    if (minDistance <= 640) {
       try {
         const bearing = getRhumbLineBearing(npc, nearestSurvivor);
         const nextPos = computeDestinationPoint(npc, 2.5, bearing);
