@@ -99,7 +99,7 @@ io.on('connection', (socket) => {
       const nearbyPowerup = powerups.some(pu => getDistance(coords, pu) <= 2000);
 
       if (!nearbyPowerup) {
-        for (let i = 0; i < 6; i++) {
+        for (let i = 0; i < 9; i++) {
           const distance = Math.floor(Math.random() * 1950) + 50;
           const bearing = Math.floor(Math.random() * 360);
           const loc = computeDestinationPoint(coords, distance, bearing);
@@ -196,7 +196,7 @@ setInterval(() => {
       longitude: loc.longitude
     });
   });
-}, 350000);
+}, 240000);
 
 setInterval(() => {
   const playersList = Object.values(activePlayers).filter((p) => p.latitude && p.longitude && p.role !== 'PENDING');
@@ -276,7 +276,7 @@ setInterval(() => {
     if (minDistance <= 600) {
       try {
         const bearing = getRhumbLineBearing(npc, nearestSurvivor);
-        const nextPos = computeDestinationPoint(npc, 3, bearing);
+        const nextPos = computeDestinationPoint(npc, 2.5, bearing);
         npc.latitude = nextPos.latitude;
         npc.longitude = nextPos.longitude;
       } catch (e) {}
