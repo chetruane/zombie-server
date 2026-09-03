@@ -16,17 +16,15 @@ let npcZombieIdCounter = 0;
 
 function getRandomPowerupType() {
   const r = Math.random();
-  if (r < 0.4) return 'RADAR';       // 40%
-  if (r < 0.7) return 'VACCINE';     // 30%
-  return 'MITOSIS';                  // 30%
+  if (r < 0.20) return 'VACCINE';     // 20%
+  if (r < 0.45) return 'MITOSIS';     // 25%
+  if (r < 0.70) return 'RADAR';       // 25%
+  return 'RIFLE';                     // 30%
 }
 
 io.on('connection', (socket) => {
   const rawIp = socket.handshake.headers['x-forwarded-for'] || socket.handshake.address;
   const ip = typeof rawIp === 'string' ? rawIp.split(',')[0].trim() : rawIp;
-  
-  const now = Date.now();
-  const ghostSocketId = Object.keys(activePlayers).find(id => activePlayers[id].ip === ip);
 
   let pData = {
     role: 'PENDING',
@@ -34,10 +32,14 @@ io.on('connection', (socket) => {
     score: 0,
     survivorStartTime: 0,
     vaccineUntil: 0,
-    radarUntil: 0
+    radarUntil: 0,
+    rifleAmmo: 0,
+    hitCount: 0,
+    lastHitTime: 0,
+    injuredUntil: 0
   };
 
-  if (ghostSocketId) {
+  if (ghostSocketId = Object.keys(activePlayers).find(id => activePlayers[id].ip === ip)) {
     pData = { ...activePlayers[ghostSocketId] };
     delete activePlayers[ghostSocketId];
     if (ipMemory[ip]) { clearTimeout(ipMemory[ip].timeout); delete ipMemory[ip]; }
@@ -55,7 +57,6 @@ io.on('connection', (socket) => {
     if (!player) return;
 
     const isFirstSpawn = !player.latitude;
-
     player.latitude = coords.latitude;
     player.longitude = coords.longitude;
 
@@ -111,6 +112,95 @@ io.on('connection', (socket) => {
             longitude: loc.longitude
           });
         }
+      }
+    }
+  });
+
+  socket.on('fire_rifle', (targetCoords) => {
+    const player = activePlayers[socket.id];
+    if (!player || !player.latitude || player.rifleAmmo <= 0 || player.injuredUntil > Date.now()) return;
+
+    player.rifleAmmo -= 1;
+    const playerLoc = { latitude: player.latitude, longitude: player.longitude };
+    
+    let bearing = 0;
+    try {
+      bearing = getRhumbLineBearing(playerLoc, targetCoords);
+    } catch (e) {
+      bearing = 0;
+    }
+
+    const endPos = computeDestinationPoint(playerLoc, 420, bearing);
+
+    // Broadcast gunshot sound to all players within 1000m
+    Object.values(activePlayers).forEach(p => {
+      if (p.latitude && getDistance(playerLoc, p) <= 1000) {
+        io.to(p.id).emit('play_sound', 'rifle');
+      }
+    });
+
+    // Send shot line data for 1s client visualization
+    io.emit('rifle_shot', {
+      id: Date.now() + Math.random(),
+      start: playerLoc,
+      end: endPos
+    });
+
+    // Helper for line segment hit detection (420m length, within 15m radius along ray)
+    const checkHit = (targetLoc) => {
+      const dist = getDistance(playerLoc, targetLoc);
+      if (dist > 420) return false;
+      let targetBearing = getRhumbLineBearing(playerLoc, targetLoc);
+      let angleDiff = Math.abs(bearing - targetBearing);
+      if (angleDiff > 180) angleDiff = 360 - angleDiff;
+      const perpDist = dist * Math.sin((angleDiff * Math.PI) / 180);
+      return perpDist <= 15;
+    };
+
+    // Check hit on NPC Zombies
+    let hitNpcIndex = -1;
+    let minNpcDist = Infinity;
+    npcZombies.forEach((npc, index) => {
+      if (checkHit(npc)) {
+        const d = getDistance(playerLoc, npc);
+        if (d < minNpcDist) {
+          minNpcDist = d;
+          hitNpcIndex = index;
+        }
+      }
+    });
+
+    if (hitNpcIndex !== -1) {
+      npcZombies.splice(hitNpcIndex, 1);
+      io.to(player.id).emit('play_sound', 'powerup');
+      return;
+    }
+
+    // Check hit on Players
+    let hitPlayer = null;
+    let minPlayerDist = Infinity;
+    Object.values(activePlayers).forEach(p => {
+      if (p.id !== player.id && p.latitude && checkHit(p)) {
+        const d = getDistance(playerLoc, p);
+        if (d < minPlayerDist) {
+          minPlayerDist = d;
+          hitPlayer = p;
+        }
+      }
+    });
+
+    if (hitPlayer) {
+      const now = Date.now();
+      if (now - hitPlayer.lastHitTime > 30000 && hitPlayer.injuredUntil <= now) {
+        hitPlayer.hitCount = 0;
+      }
+
+      hitPlayer.hitCount += 1;
+      hitPlayer.lastHitTime = now;
+
+      if (hitPlayer.hitCount >= 3) {
+        hitPlayer.injuredUntil = now + 60000;
+        io.to(player.id).emit('play_sound', 'powerup');
       }
     }
   });
@@ -209,6 +299,11 @@ setInterval(() => {
       player.score = Math.floor((now - player.survivorStartTime) / 60000);
     }
 
+    // Reset hit timer if 30s elapsed without 3rd hit
+    if (player.hitCount > 0 && player.hitCount < 3 && now - player.lastHitTime > 30000) {
+      player.hitCount = 0;
+    }
+
     powerups.forEach((pu, index) => {
       if (getDistance({ latitude: player.latitude, longitude: player.longitude }, pu) <= 40) {
         if (pu.type === 'VACCINE') {
@@ -218,8 +313,12 @@ setInterval(() => {
             player.score = 0;
           }
           player.vaccineUntil = now + 600000;
+          io.to(player.id).emit('play_sound', 'powerup');
+          powerups.splice(index, 1);
         } else if (pu.type === 'RADAR') {
           player.radarUntil = now + 600000;
+          io.to(player.id).emit('play_sound', 'powerup');
+          powerups.splice(index, 1);
         } else if (pu.type === 'MITOSIS') {
           npcZombies.push({
             id: npcZombieIdCounter++,
@@ -227,19 +326,36 @@ setInterval(() => {
             longitude: player.longitude,
             canInfectAt: now + 2000
           });
+          io.to(player.id).emit('play_sound', 'powerup');
+          powerups.splice(index, 1);
+        } else if (pu.type === 'RIFLE') {
+          if (player.role === 'SURVIVOR') {
+            player.rifleAmmo = 20;
+            io.to(player.id).emit('play_sound', 'powerup');
+            powerups.splice(index, 1);
+          }
         }
-        io.to(player.id).emit('play_sound', 'powerup');
-        powerups.splice(index, 1);
       }
     });
   });
 
   zombies.forEach((zombie) => {
-    if (now < zombie.canInfectAt) return;
+    if (now < zombie.canInfectAt || zombie.injuredUntil > now) return;
     survivors.forEach((survivor) => {
       if (now < survivor.vaccineUntil || activePlayers[survivor.id]?.role !== 'SURVIVOR') return;
 
       if (getDistance({ latitude: zombie.latitude, longitude: zombie.longitude }, survivor) <= 20) {
+        // Drop rifle back on the map if carrying one when infected
+        if (survivor.rifleAmmo > 0) {
+          powerups.push({
+            id: powerupIdCounter++,
+            type: 'RIFLE',
+            latitude: survivor.latitude,
+            longitude: survivor.longitude
+          });
+          survivor.rifleAmmo = 0;
+        }
+
         activePlayers[survivor.id].role = 'ZOMBIE';
         activePlayers[survivor.id].score = 0;
         activePlayers[zombie.id].score += 1;
@@ -266,13 +382,22 @@ setInterval(() => {
 
     if (now >= npc.canInfectAt && minDistance <= 20) {
       if (now >= nearestSurvivor.vaccineUntil && activePlayers[nearestSurvivor.id]?.role === 'SURVIVOR') {
+        if (nearestSurvivor.rifleAmmo > 0) {
+          powerups.push({
+            id: powerupIdCounter++,
+            type: 'RIFLE',
+            latitude: nearestSurvivor.latitude,
+            longitude: nearestSurvivor.longitude
+          });
+          nearestSurvivor.rifleAmmo = 0;
+        }
+
         activePlayers[nearestSurvivor.id].role = 'ZOMBIE';
         activePlayers[nearestSurvivor.id].score = 0;
         io.to(nearestSurvivor.id).emit('player_infected', { infectedId: nearestSurvivor.id });
       }
     }
 
-    // Detection Radius Check: Only move towards the survivor if they are within 600 meters
     if (minDistance <= 600) {
       try {
         const bearing = getRhumbLineBearing(npc, nearestSurvivor);
@@ -283,7 +408,15 @@ setInterval(() => {
     }
   });
 
-  io.emit('game_state', { players: Object.values(activePlayers), powerups, npcZombies });
+  // Prepare game state filtering injured players from visible map data
+  const filteredPlayers = Object.values(activePlayers).map(p => {
+    if (p.injuredUntil > now) {
+      return { ...p, latitude: null, longitude: null }; // Hide dot from map
+    }
+    return p;
+  });
+
+  io.emit('game_state', { players: filteredPlayers, powerups, npcZombies });
 }, 1000);
 
 const PORT = process.env.PORT || 3000;
