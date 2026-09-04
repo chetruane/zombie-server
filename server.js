@@ -330,6 +330,36 @@ setInterval(() => {
 }, 240000);
 
 setInterval(() => {
+  // Extract only active players who have resolved coordinates
+  const players = Object.values(activePlayers).filter((p) => p.latitude && p.longitude);
+  const zombiesToRemove = new Set();
+
+  players.forEach((p1) => {
+    // Check for players within 1km (1000m) of the current player
+    const cluster = players.filter((p2) => getDistance(p1, p2) <= 1000);
+    
+    // If 3 or more players are in this 1km range
+    if (cluster.length >= 3) {
+      npcZombies.forEach((npc) => {
+        // Skip distance math if already flagged for deletion
+        if (!zombiesToRemove.has(npc.id)) {
+          // Check if the NPC is within 1.5km (1500m) of ANY player in this specific cluster
+          const withinRange = cluster.some((cp) => getDistance(npc, cp) <= 1500);
+          if (withinRange) {
+            zombiesToRemove.add(npc.id);
+          }
+        }
+      });
+    }
+  });
+
+  // Batch delete the flagged zombies by overwriting the array
+  if (zombiesToRemove.size > 0) {
+    npcZombies = npcZombies.filter((npc) => !zombiesToRemove.has(npc.id));
+  }
+}, 30000);
+
+setInterval(() => {
   const playersList = Object.values(activePlayers).filter((p) => p.latitude && p.longitude && p.role !== 'PENDING');
   const zombies = playersList.filter((p) => p.role === 'ZOMBIE');
   const survivors = playersList.filter((p) => p.role === 'SURVIVOR');
