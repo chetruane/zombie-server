@@ -84,7 +84,7 @@ io.on('connection', (socket) => {
 
           if (!hasNearbyZombie) {
             for (let i = 0; i < 42; i++) {
-              const distance = Math.floor(Math.random() * 2311) + 90; 
+              const distance = Math.floor(Math.random() * 2311) + 100; 
               const bearing = Math.floor(Math.random() * 360);
               const loc = computeDestinationPoint(coords, distance, bearing);
               npcZombies.push({
@@ -112,7 +112,7 @@ io.on('connection', (socket) => {
       const nearbyPowerup = powerups.some(pu => getDistance(coords, pu) <= 2000);
 
       if (!nearbyPowerup) {
-        for (let i = 0; i < 14; i++) {
+        for (let i = 0; i < 16; i++) {
           const distance = Math.floor(Math.random() * 1760) + 40;
           const bearing = Math.floor(Math.random() * 360);
           const loc = computeDestinationPoint(coords, distance, bearing);
@@ -446,7 +446,7 @@ setInterval(() => {
     if (minDistance <= 164) {
       try {
         const bearing = getRhumbLineBearing(npc, nearestSurvivor);
-        const nextPos = computeDestinationPoint(npc, 2.4, bearing);
+        const nextPos = computeDestinationPoint(npc, 1.8, bearing);
         npc.latitude = nextPos.latitude;
         npc.longitude = nextPos.longitude;
       } catch (e) {}
